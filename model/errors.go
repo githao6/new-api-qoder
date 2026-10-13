@@ -25,6 +25,13 @@ var (
 // Redemption errors
 var ErrRedeemFailed = errors.New("redeem.failed")
 
+// Invite code errors
+var (
+	ErrInviteCodeRequired = errors.New("invite code is required to register")
+	ErrInviteCodeInvalid  = errors.New("invite code is invalid or already used")
+	ErrInviteCodeExpired  = errors.New("invite code has expired")
+)
+
 // 2FA errors
 var ErrTwoFANotEnabled = errors.New("2fa not enabled")
 var ErrTwoFAAlreadyEnabled = errors.New("2fa already enabled")

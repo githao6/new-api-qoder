@@ -92,6 +92,7 @@ type User struct {
 	WeChatId             string                     `json:"wechat_id" gorm:"column:wechat_id;index"`
 	TelegramId           string                     `json:"telegram_id" gorm:"column:telegram_id;index"`
 	VerificationCode     string                     `json:"verification_code" gorm:"-:all"`                         // this field is only for Email verification, don't save it to database!
+	InviteCode           string                     `json:"invite" gorm:"-:all"`                                    // registration invite code, not persisted
 	AccessToken          *string                    `json:"-" gorm:"type:char(32);column:access_token;uniqueIndex"` // Deprecated: 旧版面板访问令牌，仅在升级后的过渡期内使用；删除 users.access_token 列时一并移除。
 	AccessTokenCreatedAt *int64                     `json:"-" gorm:"type:bigint;column:access_token_created_at"`    // Deprecated: 旧版面板访问令牌，仅在升级后的过渡期内使用；删除 users.access_token 列时一并移除。
 	Quota                int                        `json:"quota" gorm:"type:int;default:0"`
@@ -732,6 +733,27 @@ func (user *User) finishInsert(inviterId int) {
 
 func (user *User) FinishInsert(inviterId int) {
 	user.finishInsert(inviterId)
+}
+
+// InsertWithInviteCode creates the account and consumes a one-time invite code
+// in a single transaction, then runs the post-creation tasks that Insert runs.
+// An empty inviteCode keeps the plain Insert path (feature off, or callers that
+// never require a code). If the user insert fails the code stays unused, and if
+// the code cannot be claimed the user row is rolled back.
+func (user *User) InsertWithInviteCode(inviterId int, inviteCode string) error {
+	if inviteCode == "" {
+		return user.Insert(inviterId)
+	}
+	if err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := user.InsertWithTx(tx, inviterId); err != nil {
+			return err
+		}
+		return ConsumeInviteCode(tx, inviteCode, user.Id, user.Username)
+	}); err != nil {
+		return err
+	}
+	user.finishInsert(inviterId)
+	return nil
 }
 
 // InsertWithTx inserts a new user within an existing transaction.

@@ -232,6 +232,16 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"DELETE /api/redemption/invalid": accessTokenScopeRule("redemption:write"),
 	"DELETE /api/redemption/:id":     accessTokenScopeRule("redemption:write"),
 
+	// router/api-router.go: /api/invite
+	"GET /api/invite/":           accessTokenScopeRule("invite:read"),
+	"GET /api/invite/search":     accessTokenScopeRule("invite:read"),
+	"GET /api/invite/:id":        accessTokenScopeRule("invite:read"),
+	"POST /api/invite/":          accessTokenScopeRule("invite:write"),
+	"POST /api/invite/batch":     accessTokenScopeRule("invite:write"),
+	"PUT /api/invite/":           accessTokenScopeRule("invite:write"),
+	"DELETE /api/invite/invalid": accessTokenScopeRule("invite:write"),
+	"DELETE /api/invite/:id":     accessTokenScopeRule("invite:write"),
+
 	// router/api-router.go: /api/audit, /api/log, /api/data
 	"GET /api/audit/self":                       accessTokenScopeRule("usage:read"),
 	"GET /api/log/":                             accessTokenScopeRule("log:read"),

@@ -317,6 +317,19 @@ func SetApiRouter(router *gin.Engine) {
 			redemptionRoute.DELETE("/invalid", controller.DeleteInvalidRedemption)
 			redemptionRoute.DELETE("/:id", controller.DeleteRedemption)
 		}
+
+		inviteCodeRoute := apiRouter.Group("/invite")
+		inviteCodeRoute.Use(middleware.AdminAuth())
+		{
+			inviteCodeRoute.GET("/", controller.GetAllInviteCodes)
+			inviteCodeRoute.GET("/search", controller.SearchInviteCodes)
+			inviteCodeRoute.GET("/:id", controller.GetInviteCode)
+			inviteCodeRoute.POST("/", controller.AddInviteCodes)
+			inviteCodeRoute.POST("/batch", controller.DeleteInviteCodeBatch)
+			inviteCodeRoute.PUT("/", controller.UpdateInviteCode)
+			inviteCodeRoute.DELETE("/invalid", controller.DeleteInvalidInviteCode)
+			inviteCodeRoute.DELETE("/:id", controller.DeleteInviteCode)
+		}
 		handlePermissionRoute(apiRouter.Group("", middleware.DisableCache(), middleware.AdminAuth()), http.MethodGet, "/audit", authz.AuditRead, controller.GetAuditLogs)
 		apiRouter.GET("/audit/self", middleware.DisableCache(), middleware.UserAuth(), controller.GetAuditLogs)
 		logRoute := apiRouter.Group("/log")

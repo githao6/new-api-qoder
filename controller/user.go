@@ -283,9 +283,22 @@ func Register(c *gin.Context) {
 	if common.EmailVerificationEnabled {
 		cleanUser.Email = user.Email
 	}
-	if err := cleanUser.Insert(inviterId); err != nil {
+	// Only consume an invite code while the gate is active; when it is off a
+	// stale invite field from the client is ignored so no code is burned.
+	inviteCode := ""
+	if common.InviteRegistrationEnabled {
+		inviteCode = strings.TrimSpace(user.InviteCode)
+		if inviteCode == "" {
+			common.ApiErrorT(c, "Invite code is required to register")
+			return
+		}
+	}
+	if err := cleanUser.InsertWithInviteCode(inviterId, inviteCode); err != nil {
 		if errors.Is(err, model.ErrEmailAlreadyTaken) {
 			common.ApiErrorT(c, "Email address is already in use")
+			return
+		}
+		if apiInviteCodeError(c, err) {
 			return
 		}
 		common.ApiError(c, err)
