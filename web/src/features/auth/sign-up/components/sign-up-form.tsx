@@ -47,7 +47,9 @@ import { useEmailVerification } from '@/features/auth/hooks/use-email-verificati
 import { useTurnstile } from '@/features/auth/hooks/use-turnstile'
 import {
   getAffiliateCode,
+  getInviteCode,
   saveAffiliateCode,
+  saveInviteCode,
 } from '@/features/auth/lib/storage'
 import { useStatus } from '@/hooks/use-status'
 import { handleServerError } from '@/lib/handle-server-error'
@@ -95,11 +97,18 @@ export function SignUpForm({
       email: '',
       password: '',
       confirmPassword: '',
+      invite: getInviteCode(),
     },
   })
 
   const emailValue = form.watch('email')
+  const inviteValue = form.watch('invite')
   const emailVerificationRequired = !!status?.email_verification
+  const inviteRegistrationEnabled = Boolean(
+    status?.invite_registration_enabled ??
+      status?.data?.invite_registration_enabled ??
+      false
+  )
   const hasUserAgreement = Boolean(status?.user_agreement_enabled)
   const hasPrivacyPolicy = Boolean(status?.privacy_policy_enabled)
   const requiresLegalConsent = hasUserAgreement || hasPrivacyPolicy
@@ -139,6 +148,23 @@ export function SignUpForm({
     }
   }, [])
 
+  useEffect(() => {
+    const invite = new URLSearchParams(window.location.search)
+      .get('invite')
+      ?.trim()
+    if (invite) {
+      saveInviteCode(invite)
+      form.setValue('invite', invite)
+    }
+  }, [form])
+
+  // Persist the typed code so OAuth buttons on this page attach the same value.
+  useEffect(() => {
+    if (inviteRegistrationEnabled) {
+      saveInviteCode(inviteValue?.trim() ?? '')
+    }
+  }, [inviteValue, inviteRegistrationEnabled])
+
   async function onSubmit(data: z.infer<typeof registerFormSchema>) {
     if (requiresLegalConsent && !agreedToLegal) {
       toast.error(legalConsentErrorMessage)
@@ -159,6 +185,11 @@ export function SignUpForm({
 
     if (!validateTurnstile()) return
 
+    if (inviteRegistrationEnabled && !inviteValue?.trim()) {
+      toast.error(t('Please enter the invite code'))
+      return
+    }
+
     setIsLoading(true)
     try {
       const res = await register({
@@ -167,6 +198,9 @@ export function SignUpForm({
         email: data.email || undefined,
         verification_code: verificationCode || undefined,
         aff_code: getAffiliateCode(),
+        invite: inviteRegistrationEnabled
+          ? inviteValue?.trim() || undefined
+          : undefined,
         turnstile: turnstileToken,
       })
 
@@ -283,6 +317,28 @@ export function SignUpForm({
             </FormItem>
           )}
         />
+
+        {/* Invite Code Field (admin-gated registration) */}
+        {inviteRegistrationEnabled && (
+          <FormField
+            control={form.control}
+            name='invite'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Invite code')}</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder={t('Enter the invite code')}
+                    maxLength={32}
+                    autoComplete='off'
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        )}
 
         {/* Confirm Password Field */}
         <FormField

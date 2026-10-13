@@ -62,6 +62,7 @@ const DEFAULT_SIDEBAR_MODULES: SidebarModulesAdminConfig = {
     channel: true,
     models: true,
     redemption: true,
+    invite: true,
     user: true,
     setting: true,
     subscription: true,
