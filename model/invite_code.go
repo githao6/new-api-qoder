@@ -184,11 +184,13 @@ func (inviteCode *InviteCode) Delete() error {
 	return DB.Delete(inviteCode).Error
 }
 
+// BatchDeleteInviteCodes soft-deletes the selected codes. Used codes are
+// excluded so a bulk action can never erase the registration audit trail.
 func BatchDeleteInviteCodes(ids []int) (int64, error) {
 	if len(ids) == 0 {
 		return 0, nil
 	}
-	result := DB.Where("id IN ?", ids).Delete(&InviteCode{})
+	result := DB.Where("id IN ? AND status <> ?", ids, common.InviteCodeStatusUsed).Delete(&InviteCode{})
 	return result.RowsAffected, result.Error
 }
 
