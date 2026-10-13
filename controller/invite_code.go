@@ -139,9 +139,12 @@ type updateInviteCodeRequest struct {
 	ExpiredTime int64  `json:"expired_time"`
 }
 
-// UpdateInviteCode edits name, status (enable/disable) and expiry. Used codes
-// are immutable so the registration history stays intact.
+// UpdateInviteCode edits name, status (enable/disable) and expiry. With
+// ?status_only set, only the status changes and the rest of the payload is
+// ignored, mirroring the redemption console. Used codes are immutable so the
+// registration history stays intact.
 func UpdateInviteCode(c *gin.Context) {
+	statusOnly := c.Query("status_only")
 	var request updateInviteCodeRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		common.ApiError(c, err)
@@ -156,27 +159,32 @@ func UpdateInviteCode(c *gin.Context) {
 		common.ApiErrorT(c, "Cannot modify an invite code that has already been used")
 		return
 	}
-	if utf8.RuneCountInString(request.Name) == 0 || utf8.RuneCountInString(request.Name) > 20 {
-		common.ApiErrorT(c, "Invite code name length must be between 1-20")
-		return
+	if statusOnly != "" {
+		if request.Status != common.InviteCodeStatusEnabled && request.Status != common.InviteCodeStatusDisabled {
+			common.ApiErrorT(c, "Invalid invite code status")
+			return
+		}
+		inviteCode.Status = request.Status
+	} else {
+		// A full edit keeps the stored status; the console toggles it through
+		// the status_only path.
+		if utf8.RuneCountInString(request.Name) == 0 || utf8.RuneCountInString(request.Name) > 20 {
+			common.ApiErrorT(c, "Invite code name length must be between 1-20")
+			return
+		}
+		if err := validateExpiredTime(request.ExpiredTime); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		inviteCode.Name = request.Name
+		inviteCode.ExpiredTime = request.ExpiredTime
 	}
-	if request.Status != common.InviteCodeStatusEnabled && request.Status != common.InviteCodeStatusDisabled {
-		common.ApiErrorT(c, "Invalid invite code status")
-		return
-	}
-	if err := validateExpiredTime(request.ExpiredTime); err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	inviteCode.Name = request.Name
-	inviteCode.Status = request.Status
-	inviteCode.ExpiredTime = request.ExpiredTime
 	if err := inviteCode.Update(); err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	recordManageAudit(c, "invite_code.update", map[string]any{"id": request.Id})
-	common.ApiSuccess(c, nil)
+	recordManageAudit(c, "invite_code.update", map[string]any{"id": request.Id, "status_only": statusOnly != ""})
+	common.ApiSuccess(c, inviteCode)
 }
 
 // DeleteInvalidInviteCode removes disabled and expired codes.
