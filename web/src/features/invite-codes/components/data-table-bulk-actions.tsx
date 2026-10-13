@@ -68,7 +68,9 @@ export function DataTableBulkActions(props: DataTableBulkActionsProps) {
     },
     onSuccess: (_count, targets) => {
       toast.success(
-        t('Successfully deleted {{count}} invite codes', { count: targets.length })
+        t('Successfully deleted {{count}} invite codes', {
+          count: targets.length,
+        })
       )
       props.table.setRowSelection((previous) => {
         const next = { ...previous }
@@ -116,16 +118,16 @@ export function DataTableBulkActions(props: DataTableBulkActionsProps) {
                   aria-label={t('Delete selected invite codes')}
                   disabled={deletion.isPending}
                   onClick={() =>
-                    setDeleteTargets(deletableSelectedRows.map((row) => row.original))
+                    setDeleteTargets(
+                      deletableSelectedRows.map((row) => row.original)
+                    )
                   }
                 />
               }
             >
               <Trash2 aria-hidden='true' />
             </TooltipTrigger>
-            <TooltipContent>
-              {t('Delete selected invite codes')}
-            </TooltipContent>
+            <TooltipContent>{t('Delete selected invite codes')}</TooltipContent>
           </Tooltip>
         )}
       </BulkActionsToolbar>

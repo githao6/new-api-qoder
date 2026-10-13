@@ -30,9 +30,7 @@ export function InviteCodes() {
   return (
     <InviteCodesProvider>
       <SectionPageLayout fixedContent>
-        <SectionPageLayout.Title>
-          {t('Invite Codes')}
-        </SectionPageLayout.Title>
+        <SectionPageLayout.Title>{t('Invite Codes')}</SectionPageLayout.Title>
         <SectionPageLayout.Actions>
           <InviteCodesPrimaryButtons />
         </SectionPageLayout.Actions>

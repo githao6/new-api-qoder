@@ -78,7 +78,7 @@ func AddInviteCodes(c *gin.Context) {
 		return
 	}
 	if request.Count > maxInviteCodeBatchSize {
-		common.ApiErrorStatus(c, http.StatusOK, common.NewMessage("Maximum {{max}} invite codes can be generated at once", map[string]any{"max": maxInviteCodeBatchSize}), gin.H{"max": maxInviteCodeBatchSize})
+		common.ApiErrorT(c, "Maximum 100 invite codes can be generated at once")
 		return
 	}
 	if err := validateExpiredTime(request.ExpiredTime); err != nil {

@@ -221,14 +221,10 @@ export function InviteCodesMutateDrawer({
         }
       }}
     >
-      <SheetContent
-        className={sideDrawerContentClassName('sm:max-w-[600px]')}
-      >
+      <SheetContent className={sideDrawerContentClassName('sm:max-w-[600px]')}>
         <SheetHeader className={sideDrawerHeaderClassName()}>
           <SheetTitle>
-            {isUpdate
-              ? t('Update Invite Code')
-              : t('Create Invite Code')}
+            {isUpdate ? t('Update Invite Code') : t('Create Invite Code')}
           </SheetTitle>
           <SheetDescription>
             {isUpdate

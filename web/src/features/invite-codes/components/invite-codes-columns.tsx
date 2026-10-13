@@ -211,7 +211,9 @@ export function useInviteCodesColumns(): ColumnDef<InviteCode>[] {
             <TooltipTrigger
               render={
                 <StatusBadge
-                  label={inviteCode.used_username || t('User {{id}}', { id: userId })}
+                  label={
+                    inviteCode.used_username || t('User {{id}}', { id: userId })
+                  }
                   variant='neutral'
                   copyable={false}
                   className='cursor-help'
@@ -230,8 +232,7 @@ export function useInviteCodesColumns(): ColumnDef<InviteCode>[] {
                 )}
                 {inviteCode.used_time > 0 && (
                   <div>
-                    {t('Used:')}{' '}
-                    {formatTimestampToDate(inviteCode.used_time)}
+                    {t('Used:')} {formatTimestampToDate(inviteCode.used_time)}
                   </div>
                 )}
               </div>

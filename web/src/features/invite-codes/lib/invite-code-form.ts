@@ -19,7 +19,10 @@ For commercial licensing, please contact support@quantumnous.com
 import type { TFunction } from 'i18next'
 import { z } from 'zod'
 
-import { INVITE_CODE_VALIDATION, getInviteCodeFormErrorMessages } from '../constants'
+import {
+  INVITE_CODE_VALIDATION,
+  getInviteCodeFormErrorMessages,
+} from '../constants'
 import type { InviteCodeFormData, InviteCode } from '../types'
 
 // ============================================================================

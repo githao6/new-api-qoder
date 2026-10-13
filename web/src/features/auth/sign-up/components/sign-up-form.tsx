@@ -106,8 +106,8 @@ export function SignUpForm({
   const emailVerificationRequired = !!status?.email_verification
   const inviteRegistrationEnabled = Boolean(
     status?.invite_registration_enabled ??
-      status?.data?.invite_registration_enabled ??
-      false
+    status?.data?.invite_registration_enabled ??
+    false
   )
   const hasUserAgreement = Boolean(status?.user_agreement_enabled)
   const hasPrivacyPolicy = Boolean(status?.privacy_policy_enabled)
@@ -325,7 +325,7 @@ export function SignUpForm({
             name='invite'
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{t('Invite code')}</FormLabel>
+                <FormLabel>{t('Invite Code')}</FormLabel>
                 <FormControl>
                   <Input
                     placeholder={t('Enter the invite code')}
