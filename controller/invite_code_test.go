@@ -369,3 +369,53 @@ func TestDeleteInviteCodeBatchSparesUsedCodes(t *testing.T) {
 	var missing model.InviteCode
 	assert.ErrorIs(t, model.DB.Where("key = ?", availableKey).First(&missing).Error, gorm.ErrRecordNotFound)
 }
+
+func TestWeChatFirstSignInIsGatedByInviteCode(t *testing.T) {
+	setupInviteRegistrationTest(t)
+	previousEnabled, previousAddress := common.WeChatAuthEnabled, common.WeChatServerAddress
+	t.Cleanup(func() {
+		common.WeChatAuthEnabled = previousEnabled
+		common.WeChatServerAddress = previousAddress
+	})
+	common.WeChatAuthEnabled = true
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// One openid per authorization code, so each attempt is a distinct
+		// WeChat identity.
+		_, _ = w.Write([]byte(`{"success":true,"data":"wechat-` + r.URL.Query().Get("code") + `"}`))
+	}))
+	t.Cleanup(upstream.Close)
+	common.WeChatServerAddress = upstream.URL
+
+	key := "wechat-single-use"
+	seedInviteCode(t, key, common.InviteCodeStatusEnabled, 0)
+
+	attempt := 0
+	runWeChatCallback := func(invite string) *httptest.ResponseRecorder {
+		attempt++
+		target := fmt.Sprintf("/api/oauth/wechat?code=code-%d", attempt)
+		if invite != "" {
+			target += "&invite=" + invite
+		}
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		c.Request = httptest.NewRequest(http.MethodGet, target, nil)
+		WeChatAuth(c)
+		return recorder
+	}
+
+	common.InviteRegistrationEnabled = true
+	response := runWeChatCallback("")
+	assert.Contains(t, response.Body.String(), "Invite code is required to register")
+	assert.Equal(t, common.InviteCodeStatusEnabled, storedInviteCode(t, key).Status)
+
+	response = runWeChatCallback(key)
+	assert.NotContains(t, response.Body.String(), "Invite code is required to register")
+	consumed := storedInviteCode(t, key)
+	assert.Equal(t, common.InviteCodeStatusUsed, consumed.Status)
+	assert.True(t, strings.HasPrefix(consumed.UsedUsername, "wechat_"), consumed.UsedUsername)
+
+	// Used codes cannot admit another new WeChat account.
+	response = runWeChatCallback(key)
+	assert.Contains(t, response.Body.String(), "Invite code is invalid or already used")
+}

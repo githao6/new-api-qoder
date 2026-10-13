@@ -227,7 +227,12 @@ export async function createOAuthFlow(
 
 // WeChat login by authorization code
 export async function wechatLoginByCode(code: string): Promise<ApiResponse> {
-  const res = await api.get('/api/oauth/wechat', { params: { code } })
+  // Mirror the OAuth state flow: a new WeChat account consumes the stored
+  // invite code, while returning users never reach the backend gate.
+  const invite = getInviteCode()
+  const res = await api.get('/api/oauth/wechat', {
+    params: { code, invite: invite || undefined },
+  })
   return res.data
 }
 
