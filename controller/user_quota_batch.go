@@ -1,6 +1,9 @@
 package controller
 
 import (
+	"slices"
+	"strings"
+
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
@@ -134,8 +137,41 @@ func validateBatchQuotaRequest(c *gin.Context) (*service.AdminUserBatchQuotaCont
 	return &context, true
 }
 
-// BatchAdjustUserQuota raises, lowers or overrides the balance of every user in
-// the selected groups on a single `admin.user.quota.batch` proof.
+// GetBatchQuotaGroups lists every addressable group with the number of live
+// accounts it currently covers, so the console can show what a selection is
+// worth before asking for a proof. A configured group with no accounts is still
+// offered, because an empty run is refused rather than silently succeeding.
+// `total` counts every account an all-users run would reach.
+func GetBatchQuotaGroups(c *gin.Context) {
+	known := quotaGroupChoices()
+	counts, err := model.CountUsersByQuotaGroups()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	total, err := model.CountUsersForQuotaBatch(nil)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	groups := make([]model.QuotaGroupCount, 0, len(known))
+	seen := make(map[string]bool, len(known))
+	for _, item := range counts {
+		groups = append(groups, item)
+		seen[item.Group] = true
+	}
+	for group := range known {
+		if !seen[group] {
+			groups = append(groups, model.QuotaGroupCount{Group: group, Count: 0})
+		}
+	}
+	slices.SortFunc(groups, func(a, b model.QuotaGroupCount) int {
+		return strings.Compare(a.Group, b.Group)
+	})
+	common.ApiSuccess(c, gin.H{"groups": groups, "total": total})
+}
+
+// BatchAdjustUserQuota raises, lowers or overrides the balance of every user in// the selected groups on a single `admin.user.quota.batch` proof.
 func BatchAdjustUserQuota(c *gin.Context) {
 	context, ok := validateBatchQuotaRequest(c)
 	if !ok {

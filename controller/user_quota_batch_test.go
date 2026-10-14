@@ -8,6 +8,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -337,6 +338,42 @@ func TestBatchQuotaRejectsOversizedSelectionAndEmptyTargets(t *testing.T) {
 	response = adminUserRequest(http.MethodPost, "/api/user/quota/batch", quotaBatchBody(t, []string{"vip"}, false, "add", 10), proof, identity, common.RoleRootUser, nil, BatchAdjustUserQuota)
 	result = decodeSecurityEnrollmentResponse(t, response)
 	assert.False(t, result.Success)
+}
+
+// GetBatchQuotaGroups is a read-only listing: every addressable group with the
+// live accounts it covers, plus the total an all-users run would reach.
+func TestBatchQuotaGroupListing(t *testing.T) {
+	_, identity, _ := setupBatchUserTest(t)
+	seedQuotaGroup(t, "quota-a", 3, 100)
+	seedQuotaGroup(t, "quota-b", 1, 100)
+
+	response := adminUserRequest(http.MethodGet, "/api/user/quota/groups", "", "", identity, common.RoleRootUser, nil, GetBatchQuotaGroups)
+	result := decodeSecurityEnrollmentResponse(t, response)
+	require.True(t, result.Success, response.Body.String())
+	var payload struct {
+		Groups []model.QuotaGroupCount `json:"groups"`
+		Total  int64                   `json:"total"`
+	}
+	require.NoError(t, common.Unmarshal(result.Data, &payload))
+
+	counts := make(map[string]int64, len(payload.Groups))
+	for _, item := range payload.Groups {
+		counts[item.Group] = item.Count
+	}
+	assert.Equal(t, int64(3), counts["quota-a"])
+	assert.Equal(t, int64(1), counts["quota-b"])
+	// The fixture population lives in "default", so the listing covers it too.
+	assert.NotZero(t, counts["default"])
+	// A configured group without members is still offered, with a zero count.
+	if _, ok := setting.GetUserUsableGroupsCopy()["vip"]; ok {
+		assert.Equal(t, int64(0), counts["vip"])
+	}
+	total, err := model.CountUsersForQuotaBatch(nil)
+	require.NoError(t, err)
+	assert.Equal(t, total, payload.Total)
+	for i := 1; i < len(payload.Groups); i++ {
+		assert.Less(t, payload.Groups[i-1].Group, payload.Groups[i].Group, "groups are sorted")
+	}
 }
 
 // A scoped access token may drive the quota batch, but only with user:write,

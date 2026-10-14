@@ -96,6 +96,7 @@ func newAccessTokenTestRouter() *gin.Engine {
 	adminRoute.POST("/manage/batch", BatchManageUsers)
 	adminRoute.POST("/delete/batch", BatchDeleteUsers)
 	adminRoute.POST("/quota/batch", BatchAdjustUserQuota)
+	adminRoute.GET("/quota/groups", GetBatchQuotaGroups)
 	return router
 }
 

@@ -96,6 +96,34 @@ func CountUsersForQuotaBatch(groups []string) (int64, error) {
 	return total, nil
 }
 
+// QuotaGroupCount is how many active accounts one group currently covers.
+type QuotaGroupCount struct {
+	Group string `json:"group"`
+	Count int64  `json:"count"`
+}
+
+// CountUsersByQuotaGroups summarizes the population per group so a batch run
+// can show its blast radius before the operator confirms it. It reuses the same
+// group filter as the run itself, so a listed count is exactly what selecting
+// that group covers.
+func CountUsersByQuotaGroups() ([]QuotaGroupCount, error) {
+	names := DistinctUserQuotaGroups()
+	counts := make([]QuotaGroupCount, 0, len(names))
+	for _, group := range names {
+		if group == "" {
+			// An empty group is only reachable through an all-users run, since
+			// a requested group name must be non-empty.
+			continue
+		}
+		total, err := CountUsersForQuotaBatch([]string{group})
+		if err != nil {
+			return nil, err
+		}
+		counts = append(counts, QuotaGroupCount{Group: group, Count: total})
+	}
+	return counts, nil
+}
+
 // DistinctUserQuotaGroups lists the groups present in active accounts, so the
 // console can offer groups that exist in data even when they are no longer in
 // the configured usable-group list. gorm renders the quoted identifier itself,
