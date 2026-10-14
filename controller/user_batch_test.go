@@ -309,6 +309,45 @@ func TestBatchDeleteValidatesWholeBatch(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// A scoped access token may drive the batch endpoints, but only after its own
+// user:write proof, and a user:read grant cannot obtain one.
+func TestBatchDeleteThroughScopedAccessToken(t *testing.T) {
+	operator, _, users := setupBatchUserTest(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.ExternalIdentityClaim{}, &model.Token{}))
+	ids := batchUserIDs(users[:2])
+	readToken, _ := createScopedAccessToken(t, operator.Id, 0, "user:read")
+	writeToken, _ := createScopedAccessToken(t, operator.Id, 0, "user:write")
+	router := newAccessTokenTestRouter()
+	body := fmt.Sprintf(`{"ids":%s}`, jsonIDs(t, ids))
+	verify := fmt.Sprintf(`{"scope":"admin.user.batch_delete","method":"password","password":"enrollment-password","context":{"user_ids":%s}}`, jsonIDs(t, ids))
+
+	response := accessTokenRequest(router, http.MethodPost, "/api/verify", readToken, "", verify)
+	assert.Equal(t, http.StatusForbidden, response.Code)
+	assert.Equal(t, "SECURITY_ACTION_FORBIDDEN", decodeSecurityEnrollmentResponse(t, response).Code)
+	_, err := model.GetUserById(ids[0], false)
+	assert.NoError(t, err)
+
+	response = accessTokenRequest(router, http.MethodPost, "/api/verify", writeToken, "", verify)
+	bodyResult := decodeSecurityEnrollmentResponse(t, response)
+	require.True(t, bodyResult.Success, bodyResult.Message)
+	var proof service.SecurityProof
+	require.NoError(t, common.Unmarshal(bodyResult.Data, &proof))
+
+	response = accessTokenRequest(router, http.MethodPost, "/api/user/delete/batch", writeToken, proof.ProofToken, body)
+	require.True(t, decodeSecurityEnrollmentResponse(t, response).Success, response.Body.String())
+	_, err = model.GetUserById(ids[0], true)
+	assert.Error(t, err)
+
+	var audit model.AuditLog
+	require.NoError(t, model.LOG_DB.Where("action = ?", "user.delete_batch").Last(&audit).Error)
+	assert.Equal(t, "access_token", audit.AuthMethod)
+	auditJSON, err := common.Marshal(audit)
+	require.NoError(t, err)
+	for _, secret := range []string{writeToken, proof.ProofToken, "enrollment-password"} {
+		assert.NotContains(t, string(auditJSON), secret)
+	}
+}
+
 func TestBatchRejectsOversizedSelection(t *testing.T) {
 	_, identity, _ := setupBatchUserTest(t)
 	tooMany := make([]int, service.MaxAdminUserBatchSize()+1)

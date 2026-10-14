@@ -136,6 +136,15 @@ export type ManageUserAction =
   | 'delete'
   | 'add_quota'
 
+/** Batch status actions; role and quota changes stay per-account. */
+export type BatchUserManageAction = 'enable' | 'disable'
+
+export interface BatchUserResult {
+  affected_user_ids: number[]
+  affected: number
+  total: number
+}
+
 export type QuotaAdjustMode = 'add' | 'subtract' | 'override'
 
 export interface ManageUserQuotaPayload {
