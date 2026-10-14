@@ -45,6 +45,7 @@ export type SecurityProofScope =
   | 'admin.user.manage'
   | 'admin.user.batch_manage'
   | 'admin.user.batch_delete'
+  | 'admin.user.quota.batch'
   | 'admin.user.passkey.reset'
   | 'admin.user.2fa.disable'
   | 'admin.user.binding.clear'
@@ -64,6 +65,21 @@ export type AdminUserBatchManageContext = {
 /** Proof context for a batch deletion, bound to the exact target set. */
 export type AdminUserBatchDeleteContext = {
   user_ids: number[]
+}
+
+/** Amount operations a batch quota run can apply to every targeted account. */
+export type AdminUserBatchQuotaMode = 'add' | 'subtract' | 'override'
+
+/**
+ * Proof context for a batch quota run, bound to the normalized group selection
+ * plus the operation and amount. `all` covers every account and then carries an
+ * empty group list; the server re-reads the population at execution time.
+ */
+export type AdminUserBatchQuotaContext = {
+  groups: string[]
+  all: boolean
+  mode: AdminUserBatchQuotaMode
+  value: number
 }
 
 export type VerificationOperation =
@@ -93,6 +109,10 @@ export type VerificationOperation =
   | {
       scope: 'admin.user.batch_delete'
       context: AdminUserBatchDeleteContext
+    }
+  | {
+      scope: 'admin.user.quota.batch'
+      context: AdminUserBatchQuotaContext
     }
   | {
       scope: 'admin.user.binding.clear'

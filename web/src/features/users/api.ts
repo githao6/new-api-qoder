@@ -33,6 +33,9 @@ import type {
   ManageUserQuotaPayload,
   BatchUserManageAction,
   BatchUserResult,
+  BatchUserQuotaPayload,
+  BatchUserQuotaResult,
+  BatchQuotaGroupsResponse,
   ApiResponse,
 } from './types'
 
@@ -202,6 +205,34 @@ export async function batchDeleteUsers(
   const res = await api.post(
     '/api/user/delete/batch',
     { ids },
+    securityProofConfig(proofToken)
+  )
+  return res.data
+}
+
+/**
+ * List every group a batch quota run may target together with the number of
+ * live accounts it covers, plus the total an all-users run would reach
+ */
+export async function getBatchQuotaGroups(): Promise<
+  ApiResponse<BatchQuotaGroupsResponse>
+> {
+  const res = await api.get('/api/user/quota/groups')
+  return res.data
+}
+
+/**
+ * Adjust the balance of every account in the selected groups (or of all
+ * accounts) with a single `admin.user.quota.batch` proof bound to the exact
+ * group selection, mode and amount
+ */
+export async function batchAdjustUserQuota(
+  payload: BatchUserQuotaPayload,
+  proofToken: string
+): Promise<ApiResponse<BatchUserQuotaResult>> {
+  const res = await api.post(
+    '/api/user/quota/batch',
+    payload,
     securityProofConfig(proofToken)
   )
   return res.data
