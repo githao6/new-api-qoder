@@ -93,6 +93,8 @@ func newAccessTokenTestRouter() *gin.Engine {
 	tokenRoute.DELETE("/legacy", RevokeLegacyAccessToken)
 	adminRoute := userRoute.Group("/", middleware.AdminAuth())
 	adminRoute.DELETE("/:id", DeleteUser)
+	adminRoute.POST("/manage/batch", BatchManageUsers)
+	adminRoute.POST("/delete/batch", BatchDeleteUsers)
 	return router
 }
 

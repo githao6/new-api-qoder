@@ -31,6 +31,8 @@ import type {
   UserFormData,
   ManageUserAction,
   ManageUserQuotaPayload,
+  BatchUserManageAction,
+  BatchUserResult,
   ApiResponse,
 } from './types'
 
@@ -169,6 +171,39 @@ export async function adjustUserQuota(
   payload: ManageUserQuotaPayload
 ): Promise<ApiResponse<Partial<User>>> {
   const res = await api.post('/api/user/manage', payload)
+  return res.data
+}
+
+/**
+ * Batch disable or enable users with a single `admin.user.batch_manage`
+ * proof bound to the exact target set
+ */
+export async function batchManageUsers(
+  ids: number[],
+  action: BatchUserManageAction,
+  proofToken: string
+): Promise<ApiResponse<BatchUserResult>> {
+  const res = await api.post(
+    '/api/user/manage/batch',
+    { ids, action },
+    securityProofConfig(proofToken)
+  )
+  return res.data
+}
+
+/**
+ * Batch permanently delete users with a single `admin.user.batch_delete`
+ * proof bound to the exact target set
+ */
+export async function batchDeleteUsers(
+  ids: number[],
+  proofToken: string
+): Promise<ApiResponse<BatchUserResult>> {
+  const res = await api.post(
+    '/api/user/delete/batch',
+    { ids },
+    securityProofConfig(proofToken)
+  )
   return res.data
 }
 

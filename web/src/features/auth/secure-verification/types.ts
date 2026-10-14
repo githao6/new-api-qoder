@@ -43,12 +43,28 @@ export type SecurityProofScope =
   | 'admin.user.update'
   | 'admin.user.delete'
   | 'admin.user.manage'
+  | 'admin.user.batch_manage'
+  | 'admin.user.batch_delete'
   | 'admin.user.passkey.reset'
   | 'admin.user.2fa.disable'
   | 'admin.user.binding.clear'
 
 /** ManageUser actions that change a user's status or role and need step-up. */
 export type AdminUserManageAction = 'disable' | 'enable' | 'promote' | 'demote'
+
+/** Batch status actions; role and quota changes stay per-account. */
+export type AdminUserBatchManageAction = 'disable' | 'enable'
+
+/** Proof context for a batch status change, bound to the exact target set. */
+export type AdminUserBatchManageContext = {
+  user_ids: number[]
+  action: AdminUserBatchManageAction
+}
+
+/** Proof context for a batch deletion, bound to the exact target set. */
+export type AdminUserBatchDeleteContext = {
+  user_ids: number[]
+}
 
 export type VerificationOperation =
   | { scope: 'channel.key.read'; context: { channel_id: number } }
@@ -69,6 +85,14 @@ export type VerificationOperation =
   | {
       scope: 'admin.user.manage'
       context: { user_id: number; action: AdminUserManageAction }
+    }
+  | {
+      scope: 'admin.user.batch_manage'
+      context: AdminUserBatchManageContext
+    }
+  | {
+      scope: 'admin.user.batch_delete'
+      context: AdminUserBatchDeleteContext
     }
   | {
       scope: 'admin.user.binding.clear'
