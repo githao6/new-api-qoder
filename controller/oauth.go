@@ -24,12 +24,14 @@ type oauthStateRequest struct {
 	Provider string          `json:"provider"`
 	Intent   string          `json:"intent"`
 	Aff      string          `json:"aff,omitempty"`
+	Invite   string          `json:"invite,omitempty"`
 	Scope    string          `json:"scope,omitempty"`
 	Context  json.RawMessage `json:"context,omitempty"`
 }
 
 type oauthFlowPayload struct {
 	AffiliateCode   string                         `json:"affiliate_code,omitempty"`
+	InviteCode      string                         `json:"invite_code,omitempty"`
 	Verification    *service.OAuthVerificationFlow `json:"verification,omitempty"`
 	Telegram        *oauth.TelegramOAuthFlow       `json:"telegram,omitempty"`
 	SessionIdentity *service.AuthIdentity          `json:"session_identity,omitempty"`
@@ -51,17 +53,19 @@ func GenerateOAuthCode(c *gin.Context) {
 	request.Provider = strings.TrimSpace(request.Provider)
 	request.Intent = strings.TrimSpace(request.Intent)
 	request.Aff = strings.TrimSpace(request.Aff)
+	request.Invite = strings.TrimSpace(request.Invite)
 	if oauth.GetProvider(request.Provider) == nil ||
 		(request.Intent != model.AuthFlowIntentLogin && request.Intent != model.AuthFlowIntentBind && request.Intent != model.AuthFlowIntentVerify) ||
 		len(request.Aff) > 32 ||
-		(request.Intent != model.AuthFlowIntentLogin && request.Aff != "") ||
+		len(request.Invite) > 32 ||
+		(request.Intent != model.AuthFlowIntentLogin && (request.Aff != "" || request.Invite != "")) ||
 		(request.Intent != model.AuthFlowIntentVerify && (request.Scope != "" || len(request.Context) != 0)) {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
 	userID := 0
 	sessionID := ""
-	flowPayload := oauthFlowPayload{AffiliateCode: request.Aff}
+	flowPayload := oauthFlowPayload{AffiliateCode: request.Aff, InviteCode: request.Invite}
 	bindingStarted := false
 	if request.Provider == "telegram" {
 		telegramFlow, err := oauth.NewTelegramOAuthFlow()
@@ -304,6 +308,49 @@ func handleOAuthVerification(c *gin.Context, provider string, oauthUser *oauth.O
 	common.ApiSuccess(c, proof)
 }
 
+// consumeInviteCodeInTx claims the invite code alongside the new account. An
+// empty code means the invite gate is off and nothing is claimed, so a stray
+// code from an older client is never burned.
+func consumeInviteCodeInTx(tx *gorm.DB, code string, userId int, username string) error {
+	if code == "" {
+		return nil
+	}
+	if err := model.ConsumeInviteCode(tx, code, userId, username); err != nil {
+		return wrapOAuthInviteError(err)
+	}
+	return nil
+}
+
+// wrapOAuthInviteError keeps the model sentinel inside an OAuth error type so
+// the login handler can distinguish expired codes from used ones.
+func wrapOAuthInviteError(err error) error {
+	switch {
+	case errors.Is(err, model.ErrInviteCodeInvalid),
+		errors.Is(err, model.ErrInviteCodeExpired),
+		errors.Is(err, model.ErrInviteCodeRequired):
+		return &OAuthInviteCodeError{err: err}
+	default:
+		return err
+	}
+}
+
+// apiInviteCodeError maps an invite code rejection to a web console message and
+// reports whether it handled the error. It is shared by password registration
+// and the OAuth paths so both phrase the three rejections identically.
+func apiInviteCodeError(c *gin.Context, err error) bool {
+	switch {
+	case errors.Is(err, model.ErrInviteCodeRequired):
+		common.ApiErrorT(c, "Invite code is required to register")
+	case errors.Is(err, model.ErrInviteCodeExpired):
+		common.ApiErrorT(c, "Invite code has expired")
+	case errors.Is(err, model.ErrInviteCodeInvalid):
+		common.ApiErrorT(c, "Invite code is invalid or already used")
+	default:
+		return false
+	}
+	return true
+}
+
 func handleOAuthLogin(c *gin.Context, provider oauth.Provider, oauthUser *oauth.OAuthUser, token *oauth.OAuthToken, flow *model.AuthFlow) {
 	// 7. Find or create user
 	var payload oauthFlowPayload
@@ -311,7 +358,7 @@ func handleOAuthLogin(c *gin.Context, provider oauth.Provider, oauthUser *oauth.
 		writeSecurityOperationError(c, err)
 		return
 	}
-	user, migration, err := findOrCreateOAuthUser(c, provider, oauthUser, token, payload.AffiliateCode)
+	user, migration, err := findOrCreateOAuthUser(c, provider, oauthUser, token, payload.AffiliateCode, payload.InviteCode)
 	if err != nil {
 		if errors.Is(err, model.ErrEmailAlreadyTaken) {
 			common.ApiErrorT(c, "Email address is already in use")
@@ -322,6 +369,8 @@ func handleOAuthLogin(c *gin.Context, provider oauth.Provider, oauthUser *oauth.
 			common.ApiErrorT(c, "User has been deleted")
 		case *OAuthRegistrationDisabledError:
 			common.ApiErrorT(c, "New user registration has been disabled by administrator")
+		case *OAuthInviteCodeError:
+			apiInviteCodeError(c, err)
 		case *OAuthEmailAlreadyTakenError:
 			common.ApiErrorT(c, "Email address is already in use")
 		case *OAuthLegacyBindingNotConfirmedError:
@@ -395,7 +444,7 @@ func handleOAuthBind(c *gin.Context, providerName string, provider oauth.Provide
 // findOrCreateOAuthUser finds the existing user or creates a new one. For a
 // legacy GitHub binding that still waits for the login verification, it also
 // returns the rewrite to carry into the challenge.
-func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *oauth.OAuthUser, token *oauth.OAuthToken, affiliateCode string) (*model.User, *service.LegacyGitHubMigration, error) {
+func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *oauth.OAuthUser, token *oauth.OAuthToken, affiliateCode string, inviteCode string) (*model.User, *service.LegacyGitHubMigration, error) {
 	user := &model.User{}
 	if provider.ProviderUserIDColumn() == "telegram_id" {
 		err := provider.FillUserByProviderID(user, oauthUser.ProviderUserID)
@@ -479,6 +528,16 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 		return nil, nil, &OAuthRegistrationDisabledError{}
 	}
 
+	// Invite gate: only new OAuth accounts need a code; existing users logged
+	// in through the provider above already returned.
+	oauthInviteCode := ""
+	if common.InviteRegistrationEnabled {
+		oauthInviteCode = strings.TrimSpace(inviteCode)
+		if oauthInviteCode == "" {
+			return nil, nil, &OAuthInviteCodeError{err: model.ErrInviteCodeRequired}
+		}
+	}
+
 	// Set up new user
 	user.Username = provider.GetProviderPrefix() + strconv.Itoa(model.GetMaxUserId()+1)
 
@@ -525,6 +584,12 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 				return err
 			}
 
+			// Claim the invite code in the same transaction, so a rollback of
+			// the user row also releases the code.
+			if err := consumeInviteCodeInTx(tx, oauthInviteCode, user.Id, user.Username); err != nil {
+				return err
+			}
+
 			// Create OAuth binding
 			binding := &model.UserOAuthBinding{
 				UserId:         user.Id,
@@ -548,6 +613,12 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 		err := model.DB.Transaction(func(tx *gorm.DB) error {
 			// Create user
 			if err := user.InsertWithTx(tx, inviterId); err != nil {
+				return err
+			}
+
+			// Claim the invite code in the same transaction, so a rollback of
+			// the user row also releases the code.
+			if err := consumeInviteCodeInTx(tx, oauthInviteCode, user.Id, user.Username); err != nil {
 				return err
 			}
 
@@ -599,6 +670,14 @@ type OAuthRegistrationDisabledError struct{}
 func (e *OAuthRegistrationDisabledError) Error() string {
 	return "registration is disabled"
 }
+
+// OAuthInviteCodeError reports an invite code the gate rejected. It keeps the
+// model sentinel so the login handler can tell "expired" from "already used".
+type OAuthInviteCodeError struct{ err error }
+
+func (e *OAuthInviteCodeError) Error() string { return e.err.Error() }
+
+func (e *OAuthInviteCodeError) Unwrap() error { return e.err }
 
 type OAuthEmailAlreadyTakenError struct{}
 

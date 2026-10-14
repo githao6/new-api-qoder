@@ -30,7 +30,7 @@ import {
   clearPasswordEncryptionCache,
   encryptPassword,
 } from './lib/password-encryption'
-import { getAffiliateCode } from './lib/storage'
+import { getAffiliateCode, getInviteCode } from './lib/storage'
 import type { TelegramAuthorization } from './lib/telegram-login'
 import type { VerificationOperation } from './secure-verification/types'
 import type {
@@ -178,12 +178,14 @@ export async function createOAuthAuthorization(
   proofToken?: string
 ): Promise<{ state: string; authorizationUrl?: string }> {
   const aff = intent === 'login' ? getAffiliateCode() : ''
+  const invite = intent === 'login' ? getInviteCode() : ''
   const res = await api.post(
     '/api/oauth/state',
     {
       provider,
       intent,
       aff: aff || undefined,
+      invite: invite || undefined,
       scope: operation?.scope,
       ...(operation?.context ? { context: operation.context } : {}),
     },
@@ -225,7 +227,12 @@ export async function createOAuthFlow(
 
 // WeChat login by authorization code
 export async function wechatLoginByCode(code: string): Promise<ApiResponse> {
-  const res = await api.get('/api/oauth/wechat', { params: { code } })
+  // Mirror the OAuth state flow: a new WeChat account consumes the stored
+  // invite code, while returning users never reach the backend gate.
+  const invite = getInviteCode()
+  const res = await api.get('/api/oauth/wechat', {
+    params: { code, invite: invite || undefined },
+  })
   return res.data
 }
 

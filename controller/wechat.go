@@ -81,12 +81,25 @@ func WeChatAuth(c *gin.Context) {
 		}
 	} else {
 		if common.RegisterEnabled {
+			// The invite gate only applies to brand new accounts; an existing
+			// WeChat binding logged in through the branch above.
+			wechatInviteCode := ""
+			if common.InviteRegistrationEnabled {
+				wechatInviteCode = strings.TrimSpace(c.Query("invite"))
+				if wechatInviteCode == "" {
+					common.ApiErrorT(c, "Invite code is required to register")
+					return
+				}
+			}
 			user.Username = "wechat_" + strconv.Itoa(model.GetMaxUserId()+1)
 			user.DisplayName = "WeChat User"
 			user.Role = common.RoleCommonUser
 			user.Status = common.UserStatusEnabled
 
-			if err := user.Insert(0); err != nil {
+			if err := user.InsertWithInviteCode(0, wechatInviteCode); err != nil {
+				if apiInviteCodeError(c, err) {
+					return
+				}
 				common.ApiError(c, err)
 				return
 			}
