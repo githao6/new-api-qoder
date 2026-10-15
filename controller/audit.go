@@ -25,6 +25,7 @@ var auditContentTemplates = map[string]string{
 	"user.manage":               "Performed ${action} on user ${username} (ID: ${id})",
 	"user.manage_batch":         "Performed ${action} on ${count} of ${total} selected users",
 	"user.delete_batch":         "Batch deleted ${count} users",
+	"user.quota_batch":          "Batch quota ${mode} of ${quota} applied to ${affected} of ${selection_size} selected users",
 	"user.quota_add":            "Increased user quota by ${quota}",
 	"user.quota_subtract":       "Decreased user quota by ${quota}",
 	"user.quota_override":       "Overrode user quota from ${from} to ${to}",

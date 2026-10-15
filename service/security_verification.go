@@ -44,6 +44,7 @@ const (
 	VerificationScopeAdminUserManage       = "admin.user.manage"
 	VerificationScopeAdminUserBatchManage  = "admin.user.batch_manage"
 	VerificationScopeAdminUserBatchDelete  = "admin.user.batch_delete"
+	VerificationScopeAdminUserBatchQuota   = "admin.user.quota.batch"
 	VerificationScopeAdminUserPasskeyReset = "admin.user.passkey.reset"
 	VerificationScopeAdminUserTwoFADisable = "admin.user.2fa.disable"
 	VerificationScopeAdminUserBindingClear = "admin.user.binding.clear"
@@ -54,8 +55,9 @@ const (
 // status or role. Quota adjustments are not gated and deletion has its own scope.
 var adminUserManageActions = []string{"disable", "enable", "promote", "demote"}
 
-// adminUserBatchManageActions are the batch status actions; role changes and
-// quota adjustments stay per-account because their proof context is per user.
+// adminUserBatchManageActions are the batch status actions; role changes stay
+// per-account because their proof context carries the new role. Quota
+// adjustments have their own scope bound to a group selection instead of IDs.
 var adminUserBatchManageActions = []string{"disable", "enable"}
 
 // IsAdminUserBatchManageAction reports whether an action is batch-manageable.
@@ -137,6 +139,70 @@ type AdminUserBatchManageContext struct {
 // set, compared as a sorted, de-duplicated ID list.
 type AdminUserBatchDeleteContext struct {
 	UserIDs []int `json:"user_ids"`
+}
+
+// adminUserQuotaModes are the balance operations a batch quota proof may bind.
+// They match the single-account adjustment modes exactly.
+var adminUserQuotaModes = []string{"add", "subtract", "override"}
+
+// IsAdminUserQuotaMode reports whether a quota adjustment mode is supported.
+func IsAdminUserQuotaMode(mode string) bool {
+	return slices.Contains(adminUserQuotaModes, mode)
+}
+
+// maxAdminUserBatchQuotaGroups bounds the group selection of one batch quota
+// request and the groups its proof may bind.
+const maxAdminUserBatchQuotaGroups = 64
+
+// MaxAdminUserBatchQuotaGroups is the group-selection upper bound.
+func MaxAdminUserBatchQuotaGroups() int { return maxAdminUserBatchQuotaGroups }
+
+// AdminUserBatchQuotaContext binds a batch quota proof to the group selection,
+// the adjustment mode and the amount. An empty selection with All set targets
+// every group; otherwise the groups are compared as a sorted, de-duplicated
+// list. The proof cannot be reused for another amount or another selection.
+type AdminUserBatchQuotaContext struct {
+	Groups []string `json:"groups"`
+	All    bool     `json:"all"`
+	Mode   string   `json:"mode"`
+	Value  int64    `json:"value"`
+}
+
+// NormalizeAdminUserBatchQuotaContext canonicalizes a batch quota selection so
+// equivalent requests bind to the same context hash. Empty group lists are
+// normalized to nil, which keeps the canonical JSON identical on the issuing
+// and the consuming side regardless of how the client encoded the selection.
+func NormalizeAdminUserBatchQuotaContext(context *AdminUserBatchQuotaContext) bool {
+	if context == nil || !IsAdminUserQuotaMode(context.Mode) {
+		return false
+	}
+	if context.Mode != "override" && context.Value <= 0 {
+		return false
+	}
+	if context.Value > int64(common.MaxWalletQuota) || context.Value < -int64(common.MaxWalletQuota) {
+		return false
+	}
+	if context.All {
+		if len(context.Groups) > 0 {
+			return false
+		}
+		context.Groups = nil
+		return true
+	}
+	normalized := make([]string, 0, len(context.Groups))
+	for _, group := range context.Groups {
+		group = strings.TrimSpace(group)
+		if group == "" || len(group) > 64 {
+			return false
+		}
+		normalized = append(normalized, group)
+	}
+	if len(normalized) == 0 || len(normalized) > maxAdminUserBatchQuotaGroups {
+		return false
+	}
+	slices.Sort(normalized)
+	context.Groups = slices.Compact(normalized)
+	return true
 }
 
 // AdminUserBindingContext names exactly one binding: a built-in binding type
@@ -280,6 +346,12 @@ func BindVerificationOperation(operation VerificationOperation) (VerificationBin
 		}
 		context.UserIDs = userIDs
 		normalized = context
+	case VerificationScopeAdminUserBatchQuota:
+		var context AdminUserBatchQuotaContext
+		if len(fields) != 4 || common.Unmarshal(operation.Context, &context) != nil || !NormalizeAdminUserBatchQuotaContext(&context) {
+			return VerificationBinding{}, ErrVerificationContextInvalid
+		}
+		normalized = context
 	case VerificationScopeAdminUserBindingClear:
 		var context AdminUserBindingContext
 		if len(fields) != 2 || common.Unmarshal(operation.Context, &context) != nil || context.UserID <= 0 || context.ProviderID < 0 {
@@ -400,6 +472,7 @@ func securityVerificationPolicy(scope string, state model.UserVerificationState)
 		VerificationScopePasswordSet, VerificationScopePasswordChange, VerificationScopeAccountDelete,
 		VerificationScopeAdminUserCreate, VerificationScopeAdminUserUpdate, VerificationScopeAdminUserDelete,
 		VerificationScopeAdminUserManage, VerificationScopeAdminUserBatchManage, VerificationScopeAdminUserBatchDelete,
+		VerificationScopeAdminUserBatchQuota,
 		VerificationScopeAdminUserPasskeyReset,
 		VerificationScopeAdminUserTwoFADisable, VerificationScopeAdminUserBindingClear:
 		if scope == VerificationScopeAccountDelete && state.Role == common.RoleRootUser {
@@ -466,6 +539,7 @@ func GetVerificationRequirements(identity AuthIdentity, scope string) (*Verifica
 			case VerificationScopeAccountBind, VerificationScopeAccountUnbind, VerificationScopePasswordSet, VerificationScopePasswordChange, VerificationScopeAccountDelete,
 				VerificationScopeAdminUserCreate, VerificationScopeAdminUserUpdate, VerificationScopeAdminUserDelete,
 				VerificationScopeAdminUserManage, VerificationScopeAdminUserBatchManage, VerificationScopeAdminUserBatchDelete,
+				VerificationScopeAdminUserBatchQuota,
 				VerificationScopeAdminUserPasskeyReset,
 				VerificationScopeAdminUserTwoFADisable, VerificationScopeAdminUserBindingClear:
 				methods[i].Available, methods[i].Reason = false, "Password authentication is disabled."

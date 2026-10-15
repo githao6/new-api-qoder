@@ -154,8 +154,54 @@ export interface ManageUserQuotaPayload {
   value: number
 }
 
+/**
+ * Batch quota payload. Either `all` (every account) or a non-empty `groups`
+ * selection; the amount is in quota units and must be positive except for an
+ * override.
+ */
+export interface BatchUserQuotaPayload {
+  groups: string[]
+  all: boolean
+  mode: QuotaAdjustMode
+  value: number
+}
+
+/** Why a batch run left an account untouched. */
+export interface BatchUserQuotaSkips {
+  self: number
+  role: number
+  deleted: number
+  missing: number
+  quota_limit: number
+}
+
+export interface BatchUserQuotaResult {
+  groups: string[] | null
+  all: boolean
+  mode: QuotaAdjustMode
+  value: number
+  processed: number
+  affected: number
+  unchanged: number
+  skipped: number
+  skipped_by_reason: BatchUserQuotaSkips
+  selection_size: number
+  partial: boolean
+}
+
+/** One addressable user group and the live accounts it currently covers. */
+export interface QuotaGroupCount {
+  group: string
+  count: number
+}
+
+export interface BatchQuotaGroupsResponse {
+  groups: QuotaGroupCount[]
+  total: number
+}
+
 // ============================================================================
 // Dialog Types
 // ============================================================================
 
-export type UsersDialogType = 'create' | 'update' | 'delete'
+export type UsersDialogType = 'create' | 'update' | 'delete' | 'batch_quota'

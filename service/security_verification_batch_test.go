@@ -106,4 +106,81 @@ func TestBindVerificationOperationBatchUserContexts(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotEqual(t, single.ContextHash, batch.ContextHash)
 	})
+
+	t.Run("batch quota binds the selection, mode and amount", func(t *testing.T) {
+		base, err := BindVerificationOperation(VerificationOperation{Scope: VerificationScopeAdminUserBatchQuota, Context: []byte(`{"groups":["default","vip"],"all":false,"mode":"add","value":1000}`)})
+		require.NoError(t, err)
+		reordered, err := BindVerificationOperation(VerificationOperation{Scope: VerificationScopeAdminUserBatchQuota, Context: []byte(`{"value":1000,"mode":"add","all":false,"groups":["vip","default","vip"]}`)})
+		require.NoError(t, err)
+		equal(t, base, reordered)
+
+		// An all-selection carries no groups, and an empty array encodes the
+		// same intent, so both must hash identically.
+		all := `{"groups":[],"all":true,"mode":"override","value":0}`
+		allBinding, err := BindVerificationOperation(VerificationOperation{Scope: VerificationScopeAdminUserBatchQuota, Context: []byte(all)})
+		require.NoError(t, err)
+		allOmittedGroups, err := BindVerificationOperation(VerificationOperation{Scope: VerificationScopeAdminUserBatchQuota, Context: []byte(`{"all":true,"mode":"override","value":0,"groups":null}`)})
+		require.NoError(t, err)
+		equal(t, allBinding, allOmittedGroups)
+
+		for _, invalid := range []string{
+			`{"groups":["default"],"all":false,"mode":"set","value":1000}`,
+			`{"groups":["default"],"all":false,"mode":"add","value":0}`,
+			`{"groups":["default"],"all":false,"mode":"subtract","value":-1}`,
+			`{"groups":[],"all":false,"mode":"add","value":1000}`,
+			`{"groups":["default",""],"all":false,"mode":"add","value":1000}`,
+			`{"groups":["default"],"all":true,"mode":"add","value":1000}`,
+			`{"groups":null,"all":true,"mode":"add","value":9007199254740992}`,
+			`{"groups":["default"],"mode":"add","value":1000}`,
+			`{"user_ids":[1],"all":false,"mode":"add","value":1000}`,
+		} {
+			_, err := BindVerificationOperation(VerificationOperation{Scope: VerificationScopeAdminUserBatchQuota, Context: []byte(invalid)})
+			assert.ErrorIs(t, err, ErrVerificationContextInvalid, invalid)
+		}
+
+		// A different amount, mode or wider selection is a different operation.
+		for _, variant := range []string{
+			`{"groups":["default","vip"],"all":false,"mode":"subtract","value":1000}`,
+			`{"groups":["default","vip"],"all":false,"mode":"add","value":1001}`,
+			`{"groups":["default"],"all":false,"mode":"add","value":1000}`,
+			`{"groups":["default","vip","svip"],"all":false,"mode":"add","value":1000}`,
+		} {
+			other, err := BindVerificationOperation(VerificationOperation{Scope: VerificationScopeAdminUserBatchQuota, Context: []byte(variant)})
+			require.NoError(t, err, variant)
+			assert.NotEqual(t, base.ContextHash, other.ContextHash, variant)
+		}
+
+		oversized := make([]string, 0, MaxAdminUserBatchQuotaGroups()+1)
+		for i := 0; i <= MaxAdminUserBatchQuotaGroups(); i++ {
+			oversized = append(oversized, fmt.Sprintf("group-%d", i))
+		}
+		_, err = BindVerificationOperation(VerificationOperation{Scope: VerificationScopeAdminUserBatchQuota, Context: []byte(`{"groups":["` + strings.Join(oversized, `","`) + `"],"all":false,"mode":"add","value":1}`)})
+		assert.ErrorIs(t, err, ErrVerificationContextInvalid)
+	})
+
+	t.Run("override accepts a zero or negative amount", func(t *testing.T) {
+		// Override sets an absolute balance, so zero (wipe) and negative
+		// values match the single-account contract rather than being rejected
+		// as a zero delta.
+		for _, context := range []string{
+			`{"groups":["default"],"all":false,"mode":"override","value":0}`,
+			`{"groups":["default"],"all":false,"mode":"override","value":-5}`,
+		} {
+			_, err := BindVerificationOperation(VerificationOperation{Scope: VerificationScopeAdminUserBatchQuota, Context: []byte(context)})
+			require.NoError(t, err, context)
+		}
+	})
+
+	t.Run("normalization trims and rejects malformed selections", func(t *testing.T) {
+		context := AdminUserBatchQuotaContext{Groups: []string{" vip ", "default"}, Mode: "add", Value: 10}
+		require.True(t, NormalizeAdminUserBatchQuotaContext(&context))
+		assert.Equal(t, []string{"default", "vip"}, context.Groups)
+
+		tooLong := "g" + strings.Repeat("x", 64)
+		assert.False(t, NormalizeAdminUserBatchQuotaContext(&AdminUserBatchQuotaContext{Groups: []string{tooLong}, Mode: "add", Value: 10}))
+		assert.False(t, NormalizeAdminUserBatchQuotaContext(&AdminUserBatchQuotaContext{Groups: []string{" "}, Mode: "add", Value: 10}))
+		assert.False(t, NormalizeAdminUserBatchQuotaContext(&AdminUserBatchQuotaContext{All: true, Groups: []string{"default"}, Mode: "add", Value: 10}))
+		assert.False(t, NormalizeAdminUserBatchQuotaContext(&AdminUserBatchQuotaContext{Mode: "promote", Value: 10}))
+		require.True(t, NormalizeAdminUserBatchQuotaContext(&AdminUserBatchQuotaContext{All: true, Mode: "override"}))
+	})
 }
